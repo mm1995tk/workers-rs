@@ -141,7 +141,7 @@ where
     // This is done instead of explicitly constructing
     // BuildOptions to preserve the behavior of appending
     // arbitrary arguments in `args`.
-    let mut build_args = vec![
+    let mut build_args = BuildArgs::try_parse_from([
         "--no-typescript".to_owned(),
         "--target".to_owned(),
         "bundler".to_owned(),
@@ -149,12 +149,28 @@ where
         OUT_DIR.to_owned(),
         "--out-name".to_owned(),
         OUT_NAME.to_owned(),
-    ];
+    ])?;
 
-    build_args.extend(args);
+    let mut user_args = vec!["--target".to_owned(), "bundler".to_owned()];
+    user_args.extend(args);
 
-    let command = BuildArgs::try_parse_from(build_args)?;
-    Ok(command.build_options)
+    let user_opts = BuildArgs::try_parse_from(user_args)?.build_options;
+
+    let build_options = &mut build_args.build_options;
+    build_options.release = user_opts.release;
+    build_options.dev = user_opts.dev;
+    build_options.scope = user_opts.scope;
+    build_options.mode = user_opts.mode;
+    build_options.weak_refs = user_opts.weak_refs;
+    build_options.reference_types = user_opts.reference_types;
+    build_options.profiling = user_opts.profiling;
+    build_options.no_pack = user_opts.no_pack;
+
+    if user_opts.out_dir.as_str() != "pkg" {
+        build_options.out_dir = user_opts.out_dir;
+    }
+
+    Ok(build_args.build_options)
 }
 
 fn wasm_pack_build<I>(args: I) -> Result<()>
@@ -300,8 +316,9 @@ mod test {
     #[test]
     fn test_wasm_pack_args_build_arg() {
         let args = vec!["--release".to_owned()];
-        let result = parse_wasm_pack_opts(args);
-        assert!(result.is_ok());
+        let result = parse_wasm_pack_opts(args).unwrap();
+        
+        assert!(result.release);
     }
 
     #[test]
@@ -310,5 +327,14 @@ mod test {
         let result = parse_wasm_pack_opts(args).unwrap();
 
         assert!(result.weak_refs);
+    }
+
+    #[test]
+    fn test_wasm_pack_args_specified_outdir() {
+        let custom_out_dir = "custom_out_dir";
+        let args = ["-d".to_owned(), custom_out_dir.to_owned()];
+        let result = parse_wasm_pack_opts(args).unwrap();
+
+        assert!(result.out_dir == custom_out_dir);
     }
 }
